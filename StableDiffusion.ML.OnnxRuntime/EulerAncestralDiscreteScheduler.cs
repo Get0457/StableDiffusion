@@ -75,7 +75,7 @@ namespace StableDiffusion.ML.OnnxRuntime
 
         }
 
-        public override DenseTensor<float> Step(Tensor<float> modelOutput,
+        public override void Step(Tensor<float> modelOutput,
                int timestep,
                Tensor<float> sample,
                int order = 4)
@@ -94,29 +94,21 @@ namespace StableDiffusion.ML.OnnxRuntime
             var sigma = this.Sigmas[stepIndex];
 
             // 1. compute predicted original sample (x_0) from sigma-scaled predicted noise
-            Tensor<float> predOriginalSample = null;
-            if (this._predictionType == "epsilon")
+            Tensor<float> predOriginalSample = _predictionType switch
             {
-                //  pred_original_sample = sample - sigma * model_output
-                predOriginalSample = TensorHelper.SubtractTensors(sample, 
-                                                                  TensorHelper.MultipleTensorByFloat(modelOutput, sigma));
-            }
-            else if (this._predictionType == "v_prediction")
-            {
-                // * c_out + input * c_skip
-                //predOriginalSample = modelOutput * (-sigma / Math.Pow(sigma * sigma + 1, 0.5)) + (sample / (sigma * sigma + 1));
-                throw new NotImplementedException($"prediction_type not implemented yet: {_predictionType}");
-            }
-            else if (this._predictionType == "sample")
-            {
-                throw new NotImplementedException($"prediction_type not implemented yet: {_predictionType}");
-            }
-            else
-            {
-                throw new ArgumentException(
+                "epsilon" =>
+                    //  pred_original_sample = sample - sigma * model_output
+                    TensorHelper.SubtractTensors(
+                        sample,
+                        TensorHelper.MultipleTensorByFloat(modelOutput, sigma)
+                    ),
+                "v_prediction" or "sample" => throw new NotImplementedException(
+                    $"prediction_type not implemented yet: {_predictionType}"
+                ),
+                _ => throw new ArgumentException(
                     $"prediction_type given as {this._predictionType} must be one of `epsilon`, or `v_prediction`"
-                );
-            }
+                )
+            };
 
             float sigmaFrom = this.Sigmas[stepIndex];
             float sigmaTo = this.Sigmas[stepIndex + 1];
@@ -129,21 +121,39 @@ namespace StableDiffusion.ML.OnnxRuntime
             var sigmaDown = sigmaDownResult < 0 ? -MathF.Pow(MathF.Abs(sigmaDownResult), 0.5f) : MathF.Pow(sigmaDownResult, 0.5f);
 
             // 2. Convert to an ODE derivative
-            var sampleMinusPredOriginalSample = TensorHelper.SubtractTensors(sample, predOriginalSample);
-            DenseTensor<float> derivative = TensorHelper.DivideTensorByFloat(sampleMinusPredOriginalSample.ToArray(), sigma, predOriginalSample.Dimensions.ToArray());// (sample - predOriginalSample) / sigma;
 
             float dt = sigmaDown - sigma;
 
-            DenseTensor<float> prevSample = TensorHelper.AddTensors(sample, TensorHelper.MultipleTensorByFloat(derivative, dt));// sample + derivative * dt;
+            var random = new Random();
+            // prevSample = sample + derivative * dt;
+            var prevSample = new PipelineTensor<float>(sample)
+                .InPlaceContinueWith((i, x) => x +
+                    (
+                        // derivative
+                        (
+                            // sampleMinusPredOriginalSample
+                            x - predOriginalSample.GetValue(i)
+                        ) / sigma
+                    ) * dt
 
-            //var noise = generator == null ? np.random.randn(modelOutput.shape) : np.random.RandomState(generator).randn(modelOutput.shape);
-            var noise = TensorHelper.GetRandomTensor(prevSample.Dimensions);
-
-            var noiseSigmaUpProduct = TensorHelper.MultipleTensorByFloat(noise, sigmaUp);
-            prevSample = TensorHelper.AddTensors(prevSample, noiseSigmaUpProduct);// prevSample + noise * sigmaUp;
-
-            return prevSample;
+                    + (
+                        // noiseSigmaUpProduct
+                        GetNormalRandomValue(random) * sigmaUp
+                    )
+                )
+                ;
+            prevSample.EvaluateAndWriteTo(sample);
         }
-      
+
+        static float GetNormalRandomValue(Random random)
+        {
+            // Generate a random number from a normal distribution with mean 0 and variance 1
+            var u1 = random.NextDouble(); // Uniform(0,1) random number
+            var u2 = random.NextDouble(); // Uniform(0,1) random number
+            var radius = Math.Sqrt(-2.0 * Math.Log(u1)); // Radius of polar coordinates
+            var theta = 2.0 * Math.PI * u2; // Angle of polar coordinates
+            var standardNormalRand = radius * Math.Cos(theta); // Standard normal random number
+            return (float)standardNormalRand;
+        }
     }
 }

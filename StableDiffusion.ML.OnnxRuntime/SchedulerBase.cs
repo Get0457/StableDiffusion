@@ -63,7 +63,7 @@ namespace StableDiffusion.ML.OnnxRuntime
             return result.ToArray<double>();
         }
 
-        public DenseTensor<float> ScaleInput(DenseTensor<float> sample, int timestep)
+        public Tensor<float> ScaleInput(Tensor<float> sample, int timestep)
         {
             // Get step index of timestep from TimeSteps
             int stepIndex = this.Timesteps.IndexOf(timestep);
@@ -78,7 +78,7 @@ namespace StableDiffusion.ML.OnnxRuntime
         }
         public abstract int[] SetTimesteps(int num_inference_steps);
 
-        public abstract DenseTensor<float> Step(
+        public abstract void Step(
                Tensor<float> modelOutput,
                int timestep,
                Tensor<float> sample,

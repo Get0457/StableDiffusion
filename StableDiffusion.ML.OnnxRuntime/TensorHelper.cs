@@ -4,11 +4,6 @@ namespace StableDiffusion.ML.OnnxRuntime
 {
     public class TensorHelper
     {
-        public static DenseTensor<T> CreateTensor<T>(T[] data, int[] dimensions)
-        {
-            return new DenseTensor<T>(data, dimensions); ;
-        }
-        
         public static DenseTensor<float> DivideTensorByFloat(float[] data, float value, int[] dimensions)
         {
             for (int i = 0; i < data.Length; i++)
@@ -16,7 +11,7 @@ namespace StableDiffusion.ML.OnnxRuntime
                 data[i] = data[i] / value;
             }
 
-            return CreateTensor(data, dimensions);
+            return new(data, dimensions);
         }
 
         public static DenseTensor<float> MultipleTensorByFloat(float[] data, float value, int[] dimensions)
@@ -26,7 +21,7 @@ namespace StableDiffusion.ML.OnnxRuntime
                 data[i] = data[i] * value;
             }
 
-            return CreateTensor(data, dimensions);
+            return new(data, dimensions);
         }
 
         public static DenseTensor<float> MultipleTensorByFloat(Tensor<float> data, float value)
@@ -40,7 +35,7 @@ namespace StableDiffusion.ML.OnnxRuntime
             {
                 sample[i] = sample[i] + sumTensor[i];
             }
-            return CreateTensor(sample, dimensions); ;
+            return new(sample, dimensions); ;
         }
 
         public static DenseTensor<float> AddTensors(Tensor<float> sample, Tensor<float> sumTensor)
@@ -48,26 +43,10 @@ namespace StableDiffusion.ML.OnnxRuntime
             return AddTensors(sample.ToArray(), sumTensor.ToArray(), sample.Dimensions.ToArray());
         }
 
-        public static Tuple<Tensor<float>, Tensor<float>> SplitTensor(Tensor<float> tensorToSplit, int[] dimensions)
+        public static (Tensor<float>, Tensor<float>) SplitTensor(Tensor<float> tensorToSplit)
         {
-            var tensor1 = new DenseTensor<float>(dimensions);
-            var tensor2 = new DenseTensor<float>(dimensions);
-
-            for (int i = 0; i < 1; i++)
-            {
-                for (int j = 0; j < 4; j++)
-                {
-                    for (int k = 0; k < 512 / 8; k++)
-                    {
-                        for (int l = 0; l < 512 / 8; l++)
-                        {
-                            tensor1[i, j, k, l] = tensorToSplit[i, j, k, l];
-                            tensor2[i, j, k, l] = tensorToSplit[i, j + 4, k, l];
-                        }
-                    }
-                }
-            }
-            return new Tuple<Tensor<float>, Tensor<float>>(tensor1, tensor2);
+            return (new SpanTensor<float>(tensorToSplit, DimRangeOf(..1, .., .., ..)),
+                new SpanTensor<float>(tensorToSplit, DimRangeOf(1.., .., .., ..)));
 
         }
 
@@ -85,13 +64,7 @@ namespace StableDiffusion.ML.OnnxRuntime
                 }
             }
 
-            return CreateTensor(sumArray, dimensions);
-        }
-
-        public static DenseTensor<float> Duplicate(float[] data, int[] dimensions)
-        {
-            data = data.Concat(data).ToArray();
-            return CreateTensor(data, dimensions);
+            return new(sumArray, dimensions);
         }
 
         public static DenseTensor<float> SubtractTensors(float[] sample, float[] subTensor, int[] dimensions)
@@ -100,7 +73,7 @@ namespace StableDiffusion.ML.OnnxRuntime
             {
                 sample[i] = sample[i] - subTensor[i];
             }
-            return CreateTensor(sample, dimensions);
+            return new(sample, dimensions);
         }
 
         public static DenseTensor<float> SubtractTensors(Tensor<float> sample, Tensor<float> subTensor)
@@ -125,10 +98,11 @@ namespace StableDiffusion.ML.OnnxRuntime
                 latentsArray[i] = (float)standardNormalRand;
             }
 
-            latents = TensorHelper.CreateTensor(latentsArray, latents.Dimensions.ToArray());
+            latents = new(latentsArray, latents.Dimensions.ToArray());
 
             return latents;
 
         }
+        static ReadOnlySpan<Range> DimRangeOf(params Range[] ranges) => ranges;
     }
 }

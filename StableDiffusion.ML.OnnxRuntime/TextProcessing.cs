@@ -5,91 +5,99 @@ namespace StableDiffusion.ML.OnnxRuntime
 {
     public static class TextProcessing
     {
-        public static DenseTensor<float> PreprocessText(String prompt, StableDiffusionConfig config)
+        public static Tensor<float> PreprocessText(String prompt, StableDiffusionConfig config)
         {
             // Load the tokenizer and text encoder to tokenize and encode the text.
             var textTokenized = TokenizeText(prompt, config);
-            var textPromptEmbeddings = TextEncoder(textTokenized, config).ToArray();
+            var textPromptEmbeddings = TextEncoder(textTokenized, config);
 
             // Create uncond_input of blank tokens
             var uncondInputTokens = CreateUncondInput();
-            var uncondEmbedding = TextEncoder(uncondInputTokens, config).ToArray();
+            var uncondEmbedding = TextEncoder(uncondInputTokens, config);
 
             // Concant textEmeddings and uncondEmbedding
-            DenseTensor<float> textEmbeddings = new DenseTensor<float>(new[] { 2, 77, 768 });
+            //DenseTensor<float> textEmbeddings = new DenseTensor<float>(new[] { 2, 77, 768 });
 
-            for (var i = 0; i < textPromptEmbeddings.Length; i++)
-            {
-                textEmbeddings[0, i / 768, i % 768] = uncondEmbedding[i];
-                textEmbeddings[1, i / 768, i % 768] = textPromptEmbeddings[i];
-            }
+            Tensor<float> textEmbeddings = new HStackTensor<float>(uncondEmbedding, textPromptEmbeddings);
+
+            //for (var i = 0; i < textPromptEmbeddings.Length; i++)
+            //{
+            //    textEmbeddings[0, i / 768, i % 768] = uncondEmbedding[i];
+            //    textEmbeddings[1, i / 768, i % 768] = textPromptEmbeddings[i];
+            //}
+
+            GC.Collect();
             return textEmbeddings;
         }
-        public static int[] TokenizeText(string text, StableDiffusionConfig config)
+
+
+        const int modelMaxLength = 77;
+        const int blankTokenValue = 49407;
+        public static Tensor<int> TokenizeText(string text, StableDiffusionConfig config)
         {
             // Create session options for custom op of extensions
             var sessionOptions = new SessionOptions();
             sessionOptions.RegisterCustomOpLibraryV2(config.OrtExtensionsPath, out var libraryHandle);
             
             // Create an InferenceSession from the onnx clip tokenizer.
-            var tokenizeSession = new InferenceSession(config.TokenizerOnnxPath, sessionOptions);
-            var inputTensor = new DenseTensor<string>(new string[] { text }, new int[] { 1 });
-            var inputString = new List<NamedOnnxValue> { NamedOnnxValue.CreateFromTensor<string>("string_input", inputTensor) };
+            using var tokenizeSession = new InferenceSession(config.TokenizerOnnxPath, sessionOptions);
             // Run session and send the input data in to get inference output. 
-            var tokens = tokenizeSession.Run(inputString);
+            var tokens = tokenizeSession.Run(new NamedOnnxValue[] {
+                NamedOnnxValue.CreateFromTensor(
+                    "string_input",
+                    new DenseTensor<string>(new string[] { text }, DimensionOf(1)
+                )) 
+            });
 
 
-            var inputIds = (tokens.ToList().First().Value as IEnumerable<long>).ToArray();
-            Console.WriteLine(String.Join(" ", inputIds));
+            var inputIds = (DenseTensor<long>)tokens.First().Value;
 
             // Cast inputIds to Int32
-            var InputIdsInt = inputIds.Select(x => (int)x).ToArray();
-
-            var modelMaxLength = 77;
-            // Pad array with 49407 until length is modelMaxLength
-            if (InputIdsInt.Length < modelMaxLength)
+            var InputIdsInt = new DenseTensor<int>(new int[modelMaxLength], DimensionOf(77));
+            int i = 0;
+            foreach (var item in inputIds)
             {
-                var pad = Enumerable.Repeat(49407, 77 - InputIdsInt.Length).ToArray();
-                InputIdsInt = InputIdsInt.Concat(pad).ToArray();
+                if (i >= modelMaxLength) break;
+                InputIdsInt.SetValue(i++, (int)item);
+            }
+            // Pad array with 49407 until length is modelMaxLength
+            while (i < modelMaxLength)
+            {
+                InputIdsInt.SetValue(i++, blankTokenValue);
+            }
+            
+            return InputIdsInt;
+        }
+
+        public static DenseTensor<int> CreateUncondInput()
+        {
+            var InputIdsInt = new DenseTensor<int>(new int[modelMaxLength], DimensionOf(77));
+            int i = 0;
+            InputIdsInt.SetValue(i++, 49406);
+            // Pad array with 49407 until length is modelMaxLength
+            while (i < modelMaxLength)
+            {
+                InputIdsInt.SetValue(i++, blankTokenValue);
             }
 
             return InputIdsInt;
-
         }
-
-        public static int[] CreateUncondInput()
-        {
-            // Create an array of empty tokens for the unconditional input.
-            var blankTokenValue = 49407;
-            var modelMaxLength = 77;
-            var inputIds = new List<Int32>();
-            inputIds.Add(49406);
-            var pad = Enumerable.Repeat(blankTokenValue, modelMaxLength - inputIds.Count()).ToArray();
-            inputIds.AddRange(pad);
-
-            return inputIds.ToArray();
-        }
-
-        public static DenseTensor<float> TextEncoder(int[] tokenizedInput, StableDiffusionConfig config)
+        public static Tensor<float> TextEncoder(Tensor<int> tokenizedInput, StableDiffusionConfig config)
         {
             // Create input tensor.
-            var input_ids = TensorHelper.CreateTensor(tokenizedInput, new[] { 1, tokenizedInput.Count() });
+            var input_ids = tokenizedInput.Reshape(DimensionOf(1, tokenizedInput.Dimensions[0]));
 
-            var input = new List<NamedOnnxValue> { NamedOnnxValue.CreateFromTensor<int>("input_ids", input_ids) };
+            var input = new List<NamedOnnxValue> { NamedOnnxValue.CreateFromTensor("input_ids", input_ids) };
 
             // Set CUDA EP
             var sessionOptions = config.GetSessionOptionsForEp();
 
-            var encodeSession = new InferenceSession(config.TextEncoderOnnxPath, sessionOptions);
+            using var encodeSession = new InferenceSession(config.TextEncoderOnnxPath, sessionOptions);
             // Run inference.
-            var encoded = encodeSession.Run(input);
-
-            var lastHiddenState = (encoded.ToList().First().Value as IEnumerable<float>).ToArray();
-            var lastHiddenStateTensor = TensorHelper.CreateTensor(lastHiddenState.ToArray(), new[] { 1, 77, 768 });
-
-            return lastHiddenStateTensor;
+            using var encoded = encodeSession.Run(input);
+            return ((DenseTensor<float>)encoded.First().Value).Clone();
 
         }
-
+        static int[] DimensionOf(params int[] Is) => Is;
     }
 }
