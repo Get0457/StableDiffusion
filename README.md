@@ -1,3 +1,11 @@
+# Disclaimer
+This is a fork of [cassiebreviu/StableDiffusion](https://github.com/cassiebreviu/StableDiffusion)
+Here, I try to focus on optimizing the logic to use less memory, as well as unhardcode some stuff that may lead to other kinds of model becoming unusable.
+
+Note that I am only working [direct-ML-EP branch](https://github.com/Get0457/StableDiffusion/tree/direct-ML-EP)
+
+Below this message is the original message in the readme
+
 
 # Inference Stable Diffusion with C# and ONNX Runtime
 
