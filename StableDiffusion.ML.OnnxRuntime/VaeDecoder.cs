@@ -20,8 +20,10 @@ namespace StableDiffusion.ML.OnnxRuntime
         }
 
         // create method to convert float array to an image with imagesharp
-        public static Image<Rgba32> ConvertToImage(Tensor<float> output, StableDiffusionConfig config, int width = 512, int height = 512)
+        public static Image<Rgba32> ConvertToImage(Tensor<float> output, StableDiffusionConfig config)
         {
+            int width = config.Width, height = config.Height;
+
             var result = new Image<Rgba32>(width, height);
 
             for (var y = 0; y < height; y++)
