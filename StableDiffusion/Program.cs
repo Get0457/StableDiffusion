@@ -6,12 +6,14 @@ namespace StableDiffusion
     {
         static void Main(string[] args)
         {
+            Console.Write("Image Geneartor\nTell me what image you want\n> ");
+            var prompt = Console.ReadLine();
+
+
             //test how long this takes to execute
             var watch = System.Diagnostics.Stopwatch.StartNew();
 
-            //Default args
-            var prompt = "a fireplace in an old cabin in the woods";
-            Console.WriteLine(prompt);
+            const string ModelPath = @"path/to/model";
 
             var config = new StableDiffusionConfig
             {
@@ -26,11 +28,13 @@ namespace StableDiffusion
                 ExecutionProviderTarget = StableDiffusionConfig.ExecutionProvider.DirectML,
                 // Set GPU Device ID.
                 DeviceId = 1,
+                //Width = 512 / 2,
+                //Height = 512 / 2,
                 // Update paths to your models
-                TextEncoderOnnxPath = @"C:\code\StableDiffusion\StableDiffusion\models\text_encoder\model.onnx",
-                UnetOnnxPath = @"C:\code\StableDiffusion\StableDiffusion\models\unet\model.onnx",
-                VaeDecoderOnnxPath = @"C:\code\StableDiffusion\StableDiffusion\models\vae_decoder\model.onnx",
-                SafetyModelPath = @"C:\code\StableDiffusion\StableDiffusion\models\safety_checker\model.onnx",
+                TextEncoderOnnxPath = $@"{ModelPath}\text_encoder\model.onnx",
+                UnetOnnxPath = $@"{ModelPath}\unet\model.onnx",
+                VaeDecoderOnnxPath = $@"{ModelPath}\vae_decoder\model.onnx",
+                SafetyModelPath = $@"{ModelPath}\safety_checker\model.onnx",
             };
 
             // Inference Stable Diff
